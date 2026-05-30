@@ -13,18 +13,57 @@ import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import android.view.Menu
 import android.view.MenuItem
+import android.net.Uri
+import android.provider.MediaStore
+import android.content.Intent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import com.example.mystuff.databinding.ActivityMainBinding
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
+    private lateinit var photoUri: Uri
 
-    private val takePicturePreview = registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        if (bitmap != null) {
-            Snackbar.make(binding.root, "Photo taken!", Snackbar.LENGTH_LONG).show()
+    private val takePicture = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            launchCrop(photoUri)
         }
+    }
+
+    private val cropImage = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            Snackbar.make(binding.root, "Photo cropped!", Snackbar.LENGTH_LONG).show()
+        }
+    }
+
+    private fun launchCrop(uri: Uri) {
+        val intent = Intent("com.android.camera.action.CROP")
+        intent.setDataAndType(uri, "image/*")
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        intent.putExtra("crop", "true")
+        // Try setting these to 0 to explicitly request free-form
+        intent.putExtra("aspectX", 0)
+        intent.putExtra("aspectY", 0)
+        intent.putExtra("scale", true)
+        intent.putExtra("scaleUpIfNeeded", true)
+        intent.putExtra("noFaceDetection", true)
+        intent.putExtra("return-data", false)
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+        
+        try {
+            cropImage.launch(intent)
+        } catch (_: Exception) {
+            Snackbar.make(binding.root, "Crop not supported", Snackbar.LENGTH_LONG).show()
+        }
+    }
+
+    private fun getTmpFileUri(): Uri {
+        val tmpFile = File(File(cacheDir, "images").apply { mkdirs() }, "tmp_image.jpg")
+        return FileProvider.getUriForFile(applicationContext, "$packageName.fileprovider", tmpFile)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,7 +88,8 @@ class MainActivity : AppCompatActivity() {
         setupActionBarWithNavController(navController, appBarConfiguration)
 
         binding.fab.setOnClickListener {
-            takePicturePreview.launch(null)
+            photoUri = getTmpFileUri()
+            takePicture.launch(photoUri)
         }
     }
 
