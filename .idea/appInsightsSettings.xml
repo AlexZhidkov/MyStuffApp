@@ -22,10 +22,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.azhidkov.stuff" />
+                  <option name="mobileSdkAppId" value="1:37308974986:android:70d1cf61cb5e78562e6a73" />
+                  <option name="projectId" value="mystuff-ai-app" />
+                  <option name="projectNumber" value="37308974986" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

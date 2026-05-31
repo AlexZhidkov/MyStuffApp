@@ -29,6 +29,7 @@
     <string name="error_photo_load_failed">Photo load failed: %1$s</string>
     <string name="error_analysis_failed">Analysis failed: %1$s</string>
     <string name="error_object_list_save_failed">Object list save failed: %1$s</string>
+    <string name="error_unknown">Unknown error</string>
 
     <string name="lorem_ipsum">
         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris

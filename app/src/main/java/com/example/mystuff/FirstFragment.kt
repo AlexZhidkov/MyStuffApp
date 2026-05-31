@@ -13,6 +13,8 @@ import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.example.mystuff.databinding.FragmentFirstBinding
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +26,7 @@ class FirstFragment : Fragment() {
     private var _binding: FragmentFirstBinding? = null
     private val binding get() = _binding!!
     private val objectLister by lazy { LiteRtLmObjectLister(requireContext()) }
+    private val firestore by lazy { FirebaseFirestore.getInstance() }
     private var currentBitmap: Bitmap? = null
 
     private val importModel = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -213,35 +216,37 @@ class FirstFragment : Fragment() {
 
     private fun saveObjectList() {
         val objectList = binding.textResult.text.toString()
-        setObjectListActionsEnabled(false)
-        viewLifecycleOwner.lifecycleScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    getObjectListFile().writeText(objectList)
-                }
-            }
+        val stuffDocument = mapOf(
+            "description" to objectList,
+            "location" to STUFF_LOCATION,
+            "createdAt" to FieldValue.serverTimestamp(),
+        )
 
-            result
-                .onSuccess {
+        setObjectListActionsEnabled(false)
+        firestore.collection(STUFF_COLLECTION)
+            .add(stuffDocument)
+            .addOnCompleteListener { task ->
+                val currentBinding = _binding ?: return@addOnCompleteListener
+                val safeContext = context ?: return@addOnCompleteListener
+                if (task.isSuccessful) {
                     Toast.makeText(
-                        requireContext(),
+                        safeContext,
                         R.string.status_object_list_saved,
                         Toast.LENGTH_SHORT
                     ).show()
-                }
-                .onFailure { throwable ->
+                } else {
+                    val throwable = task.exception
                     Toast.makeText(
-                        requireContext(),
+                        safeContext,
                         getString(
                             R.string.error_object_list_save_failed,
-                            throwable.message ?: throwable::class.java.simpleName
+                            throwable?.message ?: getString(R.string.error_unknown)
                         ),
                         Toast.LENGTH_LONG
                     ).show()
                 }
-
-            setObjectListActionsEnabled(binding.textResult.isEnabled)
-        }
+                setObjectListActionsEnabled(currentBinding.textResult.isEnabled)
+            }
     }
 
     private fun clearEditableObjectList() {
@@ -265,10 +270,6 @@ class FirstFragment : Fragment() {
 
     private fun getModelFile(): File {
         return File(File(requireContext().filesDir, "models"), MODEL_FILE_NAME)
-    }
-
-    private fun getObjectListFile(): File {
-        return File(requireContext().filesDir, OBJECT_LIST_FILE_NAME)
     }
 
     private fun updateModelStatus() {
@@ -305,8 +306,9 @@ class FirstFragment : Fragment() {
     }
 
     private fun setObjectListActionsEnabled(enabled: Boolean) {
-        binding.buttonSaveObjectList.isEnabled = enabled
-        binding.buttonCancelObjectList.isEnabled = enabled
+        val currentBinding = _binding ?: return
+        currentBinding.buttonSaveObjectList.isEnabled = enabled
+        currentBinding.buttonCancelObjectList.isEnabled = enabled
     }
 
     private fun formatBytes(bytes: Long): String {
@@ -323,7 +325,8 @@ class FirstFragment : Fragment() {
 
     companion object {
         private const val MODEL_FILE_NAME = "object_lister.litertlm"
-        private const val OBJECT_LIST_FILE_NAME = "object_list.txt"
+        private const val STUFF_COLLECTION = "stuff"
+        private const val STUFF_LOCATION = "house"
         private const val MAX_IMAGE_SIDE_PX = 1024
     }
 }
