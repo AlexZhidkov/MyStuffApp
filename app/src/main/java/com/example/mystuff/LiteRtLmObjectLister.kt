@@ -28,10 +28,11 @@ class LiteRtLmObjectLister(context: Context) : AutoCloseable {
             Identify every distinct visible physical object in this cropped photo.
             Return only a concise bullet list.
             Use one object per line.
+            For multiple objects of the same type, use plural in one line. 
             Do not include visible people.
             If an object is uncertain, prefix it with "possible".
             If an object cannot be identified, ignore it.
-            Do not describe the scene and do not add extra commentary.
+            Do not describe the scene, the surface and do not add extra commentary.
         """.trimIndent()
 
         currentEngine.createConversation(
