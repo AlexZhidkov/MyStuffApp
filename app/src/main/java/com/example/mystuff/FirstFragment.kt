@@ -1,6 +1,7 @@
 package com.example.mystuff
 
 import android.graphics.Bitmap
+import androidx.core.graphics.scale
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Bundle
@@ -13,10 +14,15 @@ import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.example.mystuff.databinding.FragmentFirstBinding
+import com.google.android.gms.tasks.Tasks
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageMetadata
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -27,6 +33,7 @@ class FirstFragment : Fragment() {
     private val binding get() = _binding!!
     private val objectLister by lazy { LiteRtLmObjectLister(requireContext()) }
     private val firestore by lazy { FirebaseFirestore.getInstance() }
+    private val storage by lazy { FirebaseStorage.getInstance() }
     private var currentBitmap: Bitmap? = null
 
     private val importModel = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -36,7 +43,7 @@ class FirstFragment : Fragment() {
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
+        savedInstanceState: Bundle?,
     ): View {
 
         _binding = FragmentFirstBinding.inflate(inflater, container, false)
@@ -84,7 +91,7 @@ class FirstFragment : Fragment() {
 
     private fun copySelectedModel(uri: Uri) {
         objectLister.close()
-        setBusy(true, getString(R.string.status_importing_model))
+        setBusy(isBusy = true, message = getString(R.string.status_importing_model))
         viewLifecycleOwner.lifecycleScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
@@ -215,38 +222,98 @@ class FirstFragment : Fragment() {
     }
 
     private fun saveObjectList() {
+        val bitmap = currentBitmap
+        if (bitmap == null) {
+            Toast.makeText(requireContext(), R.string.status_take_photo_first, Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val objectList = binding.textResult.text.toString()
-        val stuffDocument = mapOf(
-            "description" to objectList,
-            "location" to STUFF_LOCATION,
-            "createdAt" to FieldValue.serverTimestamp(),
-        )
+        val documentRef = firestore.collection(STUFF_COLLECTION).document()
+        val imagePath = "$STUFF_COLLECTION/${documentRef.id}.webp"
+        val thumbnailPath = "$STUFF_COLLECTION/${documentRef.id}_thumb.webp"
 
         setObjectListActionsEnabled(false)
-        firestore.collection(STUFF_COLLECTION)
-            .add(stuffDocument)
-            .addOnCompleteListener { task ->
-                val currentBinding = _binding ?: return@addOnCompleteListener
-                val safeContext = context ?: return@addOnCompleteListener
-                if (task.isSuccessful) {
-                    Toast.makeText(
-                        safeContext,
-                        R.string.status_object_list_saved,
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    val throwable = task.exception
-                    Toast.makeText(
-                        safeContext,
-                        getString(
-                            R.string.error_object_list_save_failed,
-                            throwable?.message ?: getString(R.string.error_unknown)
-                        ),
-                        Toast.LENGTH_LONG
-                    ).show()
+        viewLifecycleOwner.lifecycleScope.launch {
+            val encodedImagesResult = runCatching {
+                withContext(Dispatchers.Default) {
+                    encodeStuffImages(bitmap)
                 }
-                setObjectListActionsEnabled(currentBinding.textResult.isEnabled)
             }
+
+            encodedImagesResult
+                .onSuccess { encodedImages ->
+                    val metadata = StorageMetadata.Builder()
+                        .setContentType(WEBP_CONTENT_TYPE)
+                        .build()
+                    val imageRef = storage.reference.child(imagePath)
+                    val thumbnailRef = storage.reference.child(thumbnailPath)
+                    val stuffDocument = mapOf(
+                        "description" to objectList,
+                        "location" to STUFF_LOCATION,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "imagePath" to imagePath,
+                        "thumbnailPath" to thumbnailPath,
+                        "imageWidth" to encodedImages.image.width,
+                        "imageHeight" to encodedImages.image.height,
+                        "thumbnailWidth" to encodedImages.thumbnail.width,
+                        "thumbnailHeight" to encodedImages.thumbnail.height,
+                        "imageContentType" to WEBP_CONTENT_TYPE,
+                        "imageSizeBytes" to encodedImages.image.bytes.size,
+                        "thumbnailSizeBytes" to encodedImages.thumbnail.bytes.size,
+                    )
+
+                    val imageUploadTask = imageRef.putBytes(encodedImages.image.bytes, metadata)
+                    val thumbnailUploadTask = thumbnailRef.putBytes(encodedImages.thumbnail.bytes, metadata)
+
+                    Tasks.whenAll(imageUploadTask, thumbnailUploadTask)
+                        .continueWithTask { task ->
+                            if (!task.isSuccessful) {
+                                task.exception?.let { throw it }
+                                error("Image upload failed")
+                            }
+                            documentRef.set(stuffDocument)
+                        }
+                        .addOnCompleteListener { task ->
+                            val currentBinding = _binding ?: return@addOnCompleteListener
+                            val safeContext = context
+                            if (safeContext != null) {
+                                if (task.isSuccessful) {
+                                    Toast.makeText(
+                                        safeContext,
+                                        R.string.status_object_list_saved,
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    val throwable = task.exception
+                                    Toast.makeText(
+                                        safeContext,
+                                        getString(
+                                            R.string.error_object_list_save_failed,
+                                            throwable?.message ?: getString(R.string.error_unknown)
+                                        ),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+                            setObjectListActionsEnabled(currentBinding.textResult.isEnabled)
+                        }
+                }
+                .onFailure { throwable ->
+                    val currentBinding = _binding ?: return@onFailure
+                    context?.let { safeContext ->
+                        Toast.makeText(
+                            safeContext,
+                            getString(
+                                R.string.error_object_list_save_failed,
+                                throwable.message ?: getString(R.string.error_unknown)
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    setObjectListActionsEnabled(currentBinding.textResult.isEnabled)
+                }
+        }
     }
 
     private fun clearEditableObjectList() {
@@ -260,12 +327,75 @@ class FirstFragment : Fragment() {
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             val maxSide = maxOf(info.size.width, info.size.height)
-            var sampleSize = 1
-            while (maxSide / sampleSize > MAX_IMAGE_SIDE_PX) {
-                sampleSize *= 2
+            if (maxSide > DISPLAY_IMAGE_MAX_SIDE_PX) {
+                val scale = DISPLAY_IMAGE_MAX_SIDE_PX.toDouble() / maxSide
+                val targetWidth = (info.size.width * scale).roundToInt().coerceAtLeast(1)
+                val targetHeight = (info.size.height * scale).roundToInt().coerceAtLeast(1)
+                decoder.setTargetSize(targetWidth, targetHeight)
             }
-            decoder.setTargetSampleSize(sampleSize)
         }
+    }
+
+    private fun encodeStuffImages(bitmap: Bitmap): EncodedStuffImages {
+        val displayBitmap = scaleBitmapToMaxSide(bitmap, DISPLAY_IMAGE_MAX_SIDE_PX)
+        val thumbnailBitmap = centerCropBitmap(bitmap, THUMBNAIL_IMAGE_SIDE_PX)
+        return try {
+            EncodedStuffImages(
+                image = EncodedImage(
+                    bytes = displayBitmap.toWebpByteArray(DISPLAY_IMAGE_WEBP_QUALITY),
+                    width = displayBitmap.width,
+                    height = displayBitmap.height
+                ),
+                thumbnail = EncodedImage(
+                    bytes = thumbnailBitmap.toWebpByteArray(THUMBNAIL_WEBP_QUALITY),
+                    width = thumbnailBitmap.width,
+                    height = thumbnailBitmap.height
+                )
+            )
+        } finally {
+            if (displayBitmap !== bitmap) {
+                displayBitmap.recycle()
+            }
+            if (thumbnailBitmap !== bitmap) {
+                thumbnailBitmap.recycle()
+            }
+        }
+    }
+
+    private fun scaleBitmapToMaxSide(bitmap: Bitmap, maxSidePx: Int): Bitmap {
+        val currentMaxSide = maxOf(bitmap.width, bitmap.height)
+        if (currentMaxSide <= maxSidePx) {
+            return bitmap
+        }
+
+        val scale = maxSidePx.toDouble() / currentMaxSide
+        val targetWidth = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
+        val targetHeight = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
+        return bitmap.scale(targetWidth, targetHeight, true)
+    }
+
+    private fun centerCropBitmap(bitmap: Bitmap, sizePx: Int): Bitmap {
+        val cropSide = minOf(bitmap.width, bitmap.height)
+        val left = (bitmap.width - cropSide) / 2
+        val top = (bitmap.height - cropSide) / 2
+        val cropped = Bitmap.createBitmap(bitmap, left, top, cropSide, cropSide)
+        if ((cropped.width == sizePx) && (cropped.height == sizePx)) {
+            return cropped
+        }
+
+        val scaled = cropped.scale(sizePx, sizePx, true)
+        if (scaled !== cropped && cropped !== bitmap) {
+            cropped.recycle()
+        }
+        return scaled
+    }
+
+    private fun Bitmap.toWebpByteArray(quality: Int): ByteArray {
+        val stream = ByteArrayOutputStream()
+        check(compress(Bitmap.CompressFormat.WEBP_LOSSY, quality, stream)) {
+            "Unable to encode WebP image"
+        }
+        return stream.toByteArray()
     }
 
     private fun getModelFile(): File {
@@ -323,10 +453,45 @@ class FirstFragment : Fragment() {
         return String.format(Locale.US, "%.1f %s", value, units[unitIndex])
     }
 
+    private class EncodedImage(
+        val bytes: ByteArray,
+        val width: Int,
+        val height: Int
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as EncodedImage
+
+            if (!bytes.contentEquals(other.bytes)) return false
+            if (width != other.width) return false
+            if (height != other.height) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = bytes.contentHashCode()
+            result = 31 * result + width
+            result = 31 * result + height
+            return result
+        }
+    }
+
+    private data class EncodedStuffImages(
+        val image: EncodedImage,
+        val thumbnail: EncodedImage
+    )
+
     companion object {
         private const val MODEL_FILE_NAME = "object_lister.litertlm"
         private const val STUFF_COLLECTION = "stuff"
         private const val STUFF_LOCATION = "house"
-        private const val MAX_IMAGE_SIDE_PX = 1024
+        private const val DISPLAY_IMAGE_MAX_SIDE_PX = 1280
+        private const val THUMBNAIL_IMAGE_SIDE_PX = 256
+        private const val DISPLAY_IMAGE_WEBP_QUALITY = 82
+        private const val THUMBNAIL_WEBP_QUALITY = 76
+        private const val WEBP_CONTENT_TYPE = "image/webp"
     }
 }

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "37308974986",
+    "project_id": "mystuff-ai-app",
+    "storage_bucket": "mystuff-ai-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:37308974986:android:70d1cf61cb5e78562e6a73",
+        "android_client_info": {
+          "package_name": "com.azhidkov.stuff"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "37308974986-tgibl8gn8ia7tchev2dvu96g1g80ha59.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAkdNF0fNePhA4AYQvrXMrSsScSFNMNyAs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "37308974986-tgibl8gn8ia7tchev2dvu96g1g80ha59.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

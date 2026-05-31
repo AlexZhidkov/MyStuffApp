@@ -76,7 +76,7 @@ class MainActivity : AppCompatActivity() {
         }
         navHostFragment.childFragmentManager.setFragmentResult(
             CROPPED_PHOTO_REQUEST_KEY,
-            result
+            result,
         )
     }
 

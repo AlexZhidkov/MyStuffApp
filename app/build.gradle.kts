@@ -49,6 +49,7 @@ dependencies {
     implementation(libs.androidx.navigation.ui.ktx)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore)
+    implementation(libs.firebase.storage)
     implementation(libs.litertlm)
     implementation(libs.material)
     testImplementation(libs.junit)
