@@ -23,6 +23,11 @@ import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        const val CROPPED_PHOTO_REQUEST_KEY = "cropped_photo_request"
+        const val CROPPED_PHOTO_URI_KEY = "cropped_photo_uri"
+    }
+
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
     private lateinit var photoUri: Uri
@@ -36,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private val cropImage = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
             Snackbar.make(binding.root, "Photo cropped!", Snackbar.LENGTH_LONG).show()
+            publishCroppedPhoto(photoUri)
         }
     }
 
@@ -57,8 +63,21 @@ class MainActivity : AppCompatActivity() {
         try {
             cropImage.launch(intent)
         } catch (_: Exception) {
-            Snackbar.make(binding.root, "Crop not supported", Snackbar.LENGTH_LONG).show()
+            Snackbar.make(binding.root, "Crop not supported; using full photo", Snackbar.LENGTH_LONG).show()
+            publishCroppedPhoto(uri)
         }
+    }
+
+    private fun publishCroppedPhoto(uri: Uri) {
+        val navHostFragment =
+            supportFragmentManager.findFragmentById(R.id.nav_host_fragment_content_main) as NavHostFragment
+        val result = Bundle().apply {
+            putString(CROPPED_PHOTO_URI_KEY, uri.toString())
+        }
+        navHostFragment.childFragmentManager.setFragmentResult(
+            CROPPED_PHOTO_REQUEST_KEY,
+            result
+        )
     }
 
     private fun getTmpFileUri(): Uri {

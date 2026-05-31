@@ -1,23 +1,34 @@
 package com.example.mystuff
 
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
+import android.net.Uri
 import android.os.Bundle
-import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.navigation.fragment.findNavController
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.example.mystuff.databinding.FragmentFirstBinding
+import java.io.File
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.core.net.toUri
 
-/**
- * A simple [Fragment] subclass as the default destination in the navigation.
- */
 class FirstFragment : Fragment() {
 
     private var _binding: FragmentFirstBinding? = null
-
-    // This property is only valid between onCreateView and
-    // onDestroyView.
     private val binding get() = _binding!!
+    private val objectLister by lazy { LiteRtLmObjectLister(requireContext()) }
+    private var currentBitmap: Bitmap? = null
+
+    private val importModel = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@registerForActivityResult
+        copySelectedModel(uri)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -32,13 +43,208 @@ class FirstFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.buttonFirst.setOnClickListener {
-            findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
+        binding.buttonImportModel.setOnClickListener {
+            importModel.launch(arrayOf("application/octet-stream", "*/*"))
         }
+        binding.buttonAnalyzePhoto.setOnClickListener {
+            analyzeCurrentPhoto()
+        }
+
+        parentFragmentManager.setFragmentResultListener(
+            MainActivity.CROPPED_PHOTO_REQUEST_KEY,
+            viewLifecycleOwner
+        ) { _, bundle ->
+            val uriString = bundle.getString(MainActivity.CROPPED_PHOTO_URI_KEY) ?: return@setFragmentResultListener
+            loadCroppedPhoto(uriString.toUri())
+        }
+
+        updateModelStatus()
+        updateAnalyzeButton()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    override fun onDestroy() {
+        objectLister.close()
+        super.onDestroy()
+    }
+
+    private fun copySelectedModel(uri: Uri) {
+        objectLister.close()
+        setBusy(true, getString(R.string.status_importing_model))
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val targetFile = getModelFile()
+                    val targetDir = targetFile.parentFile ?: error("Missing model directory")
+                    targetDir.mkdirs()
+                    val tempFile = File(targetDir, "${targetFile.name}.tmp")
+
+                    requireContext().contentResolver.openInputStream(uri).use { input ->
+                        requireNotNull(input) { "Unable to open selected model" }
+                        tempFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+
+                    if (targetFile.exists() && !targetFile.delete()) {
+                        error("Unable to replace existing model")
+                    }
+                    if (!tempFile.renameTo(targetFile)) {
+                        error("Unable to finish model import")
+                    }
+                    targetFile.length()
+                }
+            }
+
+            var startedAnalysis = false
+            result
+                .onSuccess {
+                    updateModelStatus()
+                    binding.textResult.text = getString(R.string.status_model_ready)
+                    currentBitmap?.let {
+                        startedAnalysis = true
+                        analyzeBitmap(it)
+                    }
+                }
+                .onFailure { throwable ->
+                    updateModelStatus()
+                    binding.textResult.text = getString(
+                        R.string.error_model_import_failed,
+                        throwable.message ?: throwable::class.java.simpleName
+                    )
+                }
+            if (!startedAnalysis) {
+                setBusy(false)
+                updateAnalyzeButton()
+            }
+        }
+    }
+
+    private fun loadCroppedPhoto(uri: Uri) {
+        setBusy(true, getString(R.string.status_loading_photo))
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) { decodeBitmap(uri) }
+            }
+
+            var startedAnalysis = false
+            result
+                .onSuccess { bitmap ->
+                    currentBitmap = bitmap
+                    binding.imagePreview.setImageBitmap(bitmap)
+                    binding.textPhotoStatus.text = getString(R.string.status_photo_ready)
+                    updateAnalyzeButton()
+                    if (getModelFile().exists()) {
+                        startedAnalysis = true
+                        analyzeBitmap(bitmap)
+                    } else {
+                        binding.textResult.text = getString(R.string.status_import_model_first)
+                    }
+                }
+                .onFailure { throwable ->
+                    binding.textPhotoStatus.text = getString(R.string.status_photo_missing)
+                    binding.textResult.text = getString(
+                        R.string.error_photo_load_failed,
+                        throwable.message ?: throwable::class.java.simpleName
+                    )
+                    updateAnalyzeButton()
+                }
+
+            if (!startedAnalysis) {
+                setBusy(false)
+            }
+        }
+    }
+
+    private fun analyzeCurrentPhoto() {
+        val bitmap = currentBitmap
+        if (bitmap == null) {
+            binding.textResult.text = getString(R.string.status_take_photo_first)
+            return
+        }
+        analyzeBitmap(bitmap)
+    }
+
+    private fun analyzeBitmap(bitmap: Bitmap) {
+        val modelFile = getModelFile()
+        if (!modelFile.exists()) {
+            binding.textResult.text = getString(R.string.status_import_model_first)
+            updateAnalyzeButton()
+            return
+        }
+
+        setBusy(true, getString(R.string.status_analyzing_photo))
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = runCatching {
+                objectLister.listObjects(modelFile, bitmap)
+            }
+
+            binding.textResult.text = result.getOrElse { throwable ->
+                getString(
+                    R.string.error_analysis_failed,
+                    throwable.message ?: throwable::class.java.simpleName
+                )
+            }
+            setBusy(false)
+            updateAnalyzeButton()
+        }
+    }
+
+    private fun decodeBitmap(uri: Uri): Bitmap {
+        val source = ImageDecoder.createSource(requireContext().contentResolver, uri)
+        return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val maxSide = maxOf(info.size.width, info.size.height)
+            var sampleSize = 1
+            while (maxSide / sampleSize > MAX_IMAGE_SIDE_PX) {
+                sampleSize *= 2
+            }
+            decoder.setTargetSampleSize(sampleSize)
+        }
+    }
+
+    private fun getModelFile(): File {
+        return File(File(requireContext().filesDir, "models"), MODEL_FILE_NAME)
+    }
+
+    private fun updateModelStatus() {
+        val modelFile = getModelFile()
+        binding.textModelStatus.text = if (modelFile.exists()) {
+            getString(R.string.status_model_installed, formatBytes(modelFile.length()))
+        } else {
+            getString(R.string.status_model_missing)
+        }
+    }
+
+    private fun updateAnalyzeButton() {
+        binding.buttonAnalyzePhoto.isEnabled = currentBitmap != null && getModelFile().exists()
+    }
+
+    private fun setBusy(isBusy: Boolean, message: String? = null) {
+        binding.progressAnalyzing.visibility = if (isBusy) View.VISIBLE else View.GONE
+        binding.buttonAnalyzePhoto.isEnabled = !isBusy && currentBitmap != null && getModelFile().exists()
+        binding.buttonImportModel.isEnabled = !isBusy
+        message?.let { binding.textResult.text = it }
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val units = arrayOf("KB", "MB", "GB")
+        var value = bytes / 1024.0
+        var unitIndex = 0
+        while (value >= 1024 && unitIndex < units.lastIndex) {
+            value /= 1024.0
+            unitIndex++
+        }
+        return String.format(Locale.US, "%.1f %s", value, units[unitIndex])
+    }
+
+    companion object {
+        private const val MODEL_FILE_NAME = "object_lister.litertlm"
+        private const val MAX_IMAGE_SIDE_PX = 1024
     }
 }
