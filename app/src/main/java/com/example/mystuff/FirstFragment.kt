@@ -7,7 +7,9 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.net.toUri
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.example.mystuff.databinding.FragmentFirstBinding
@@ -16,7 +18,6 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.core.net.toUri
 
 class FirstFragment : Fragment() {
 
@@ -48,6 +49,12 @@ class FirstFragment : Fragment() {
         }
         binding.buttonAnalyzePhoto.setOnClickListener {
             analyzeCurrentPhoto()
+        }
+        binding.buttonSaveObjectList.setOnClickListener {
+            saveObjectList()
+        }
+        binding.buttonCancelObjectList.setOnClickListener {
+            clearEditableObjectList()
         }
 
         parentFragmentManager.setFragmentResultListener(
@@ -104,7 +111,7 @@ class FirstFragment : Fragment() {
             result
                 .onSuccess {
                     updateModelStatus()
-                    binding.textResult.text = getString(R.string.status_model_ready)
+                    setResultText(getString(R.string.status_model_ready))
                     currentBitmap?.let {
                         startedAnalysis = true
                         analyzeBitmap(it)
@@ -112,9 +119,11 @@ class FirstFragment : Fragment() {
                 }
                 .onFailure { throwable ->
                     updateModelStatus()
-                    binding.textResult.text = getString(
-                        R.string.error_model_import_failed,
-                        throwable.message ?: throwable::class.java.simpleName
+                    setResultText(
+                        getString(
+                            R.string.error_model_import_failed,
+                            throwable.message ?: throwable::class.java.simpleName
+                        )
                     )
                 }
             if (!startedAnalysis) {
@@ -142,14 +151,16 @@ class FirstFragment : Fragment() {
                         startedAnalysis = true
                         analyzeBitmap(bitmap)
                     } else {
-                        binding.textResult.text = getString(R.string.status_import_model_first)
+                        setResultText(getString(R.string.status_import_model_first))
                     }
                 }
                 .onFailure { throwable ->
                     binding.textPhotoStatus.text = getString(R.string.status_photo_missing)
-                    binding.textResult.text = getString(
-                        R.string.error_photo_load_failed,
-                        throwable.message ?: throwable::class.java.simpleName
+                    setResultText(
+                        getString(
+                            R.string.error_photo_load_failed,
+                            throwable.message ?: throwable::class.java.simpleName
+                        )
                     )
                     updateAnalyzeButton()
                 }
@@ -163,7 +174,7 @@ class FirstFragment : Fragment() {
     private fun analyzeCurrentPhoto() {
         val bitmap = currentBitmap
         if (bitmap == null) {
-            binding.textResult.text = getString(R.string.status_take_photo_first)
+            setResultText(getString(R.string.status_take_photo_first))
             return
         }
         analyzeBitmap(bitmap)
@@ -172,7 +183,7 @@ class FirstFragment : Fragment() {
     private fun analyzeBitmap(bitmap: Bitmap) {
         val modelFile = getModelFile()
         if (!modelFile.exists()) {
-            binding.textResult.text = getString(R.string.status_import_model_first)
+            setResultText(getString(R.string.status_import_model_first))
             updateAnalyzeButton()
             return
         }
@@ -183,14 +194,59 @@ class FirstFragment : Fragment() {
                 objectLister.listObjects(modelFile, bitmap)
             }
 
-            binding.textResult.text = result.getOrElse { throwable ->
-                getString(
-                    R.string.error_analysis_failed,
-                    throwable.message ?: throwable::class.java.simpleName
-                )
-            }
+            result
+                .onSuccess { objects ->
+                    setResultText(objects, editable = true)
+                }
+                .onFailure { throwable ->
+                    setResultText(
+                        getString(
+                            R.string.error_analysis_failed,
+                            throwable.message ?: throwable::class.java.simpleName
+                        )
+                    )
+                }
             setBusy(false)
             updateAnalyzeButton()
+        }
+    }
+
+    private fun saveObjectList() {
+        val objectList = binding.textResult.text.toString()
+        setObjectListActionsEnabled(false)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    getObjectListFile().writeText(objectList)
+                }
+            }
+
+            result
+                .onSuccess {
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.status_object_list_saved,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                .onFailure { throwable ->
+                    Toast.makeText(
+                        requireContext(),
+                        getString(
+                            R.string.error_object_list_save_failed,
+                            throwable.message ?: throwable::class.java.simpleName
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+
+            setObjectListActionsEnabled(binding.textResult.isEnabled)
+        }
+    }
+
+    private fun clearEditableObjectList() {
+        if (binding.textResult.isEnabled) {
+            binding.textResult.text.clear()
         }
     }
 
@@ -211,6 +267,10 @@ class FirstFragment : Fragment() {
         return File(File(requireContext().filesDir, "models"), MODEL_FILE_NAME)
     }
 
+    private fun getObjectListFile(): File {
+        return File(requireContext().filesDir, OBJECT_LIST_FILE_NAME)
+    }
+
     private fun updateModelStatus() {
         val modelFile = getModelFile()
         binding.textModelStatus.text = if (modelFile.exists()) {
@@ -228,7 +288,25 @@ class FirstFragment : Fragment() {
         binding.progressAnalyzing.visibility = if (isBusy) View.VISIBLE else View.GONE
         binding.buttonAnalyzePhoto.isEnabled = !isBusy && currentBitmap != null && getModelFile().exists()
         binding.buttonImportModel.isEnabled = !isBusy
-        message?.let { binding.textResult.text = it }
+        message?.let { setResultText(it) }
+    }
+
+    private fun setResultText(text: CharSequence, editable: Boolean = false) {
+        binding.textResult.setText(text)
+        binding.textResult.isEnabled = editable
+        binding.textResult.isCursorVisible = editable
+        binding.textResult.isFocusable = editable
+        binding.textResult.isFocusableInTouchMode = editable
+        binding.objectListActions.visibility = if (editable) View.VISIBLE else View.GONE
+        setObjectListActionsEnabled(editable)
+        if (editable) {
+            binding.textResult.setSelection(binding.textResult.text.length)
+        }
+    }
+
+    private fun setObjectListActionsEnabled(enabled: Boolean) {
+        binding.buttonSaveObjectList.isEnabled = enabled
+        binding.buttonCancelObjectList.isEnabled = enabled
     }
 
     private fun formatBytes(bytes: Long): String {
@@ -245,6 +323,7 @@ class FirstFragment : Fragment() {
 
     companion object {
         private const val MODEL_FILE_NAME = "object_lister.litertlm"
+        private const val OBJECT_LIST_FILE_NAME = "object_list.txt"
         private const val MAX_IMAGE_SIDE_PX = 1024
     }
 }
