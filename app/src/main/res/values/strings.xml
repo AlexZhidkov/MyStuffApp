@@ -9,11 +9,21 @@
     <string name="add">Add</string>
     <string name="action_import_model">Import LiteRT-LM model</string>
     <string name="action_analyze_photo">List objects in cropped photo</string>
+    <string name="action_sign_in_with_google">Sign in with Google</string>
+    <string name="action_sign_out">Sign out</string>
     <string name="action_cancel_object_list">Cancel</string>
     <string name="action_save_object_list">Save</string>
     <string name="object_list_label">Objects</string>
     <string name="object_list_hint">Detected objects will appear here.</string>
     <string name="status_object_list_saved">Objects saved.</string>
+    <string name="auth_status_signed_out">Not signed in</string>
+    <string name="auth_status_signed_in">Signed in as %1$s</string>
+    <string name="status_signing_in">Signing in…</string>
+    <string name="status_signing_out">Signing out…</string>
+    <string name="status_signed_in">Signed in.</string>
+    <string name="status_signed_out">Signed out.</string>
+    <string name="status_sign_in_cancelled">Sign-in cancelled.</string>
+    <string name="status_sign_in_to_save">Sign in with Google to save.</string>
     <string name="photo_preview_content_description">Cropped photo preview</string>
     <string name="status_model_missing">No LiteRT-LM model imported.</string>
     <string name="status_model_installed">LiteRT-LM model imported (%1$s).</string>
@@ -28,6 +38,7 @@
     <string name="error_model_import_failed">Model import failed: %1$s</string>
     <string name="error_photo_load_failed">Photo load failed: %1$s</string>
     <string name="error_analysis_failed">Analysis failed: %1$s</string>
+    <string name="error_auth_failed">Authentication failed: %1$s</string>
     <string name="error_object_list_save_failed">Object list save failed: %1$s</string>
     <string name="error_unknown">Unknown error</string>
 

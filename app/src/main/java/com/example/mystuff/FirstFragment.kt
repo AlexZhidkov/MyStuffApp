@@ -5,16 +5,28 @@ import androidx.core.graphics.scale
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.Credential
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.example.mystuff.databinding.FragmentFirstBinding
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.gms.tasks.Tasks
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
@@ -32,9 +44,14 @@ class FirstFragment : Fragment() {
     private var _binding: FragmentFirstBinding? = null
     private val binding get() = _binding!!
     private val objectLister by lazy { LiteRtLmObjectLister(requireContext()) }
+    private val auth by lazy { FirebaseAuth.getInstance() }
+    private val credentialManager by lazy { CredentialManager.create(requireContext()) }
     private val firestore by lazy { FirebaseFirestore.getInstance() }
     private val storage by lazy { FirebaseStorage.getInstance() }
     private var currentBitmap: Bitmap? = null
+    private var authInProgress = false
+    private var authStatusMessageResId: Int? = null
+    private val authStateListener = FirebaseAuth.AuthStateListener { updateAuthUi() }
 
     private val importModel = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@registerForActivityResult
@@ -57,6 +74,13 @@ class FirstFragment : Fragment() {
         binding.buttonImportModel.setOnClickListener {
             importModel.launch(arrayOf("application/octet-stream", "*/*"))
         }
+        binding.buttonGoogleAuth.setOnClickListener {
+            if (auth.currentUser == null) {
+                signInWithGoogle()
+            } else {
+                signOut()
+            }
+        }
         binding.buttonAnalyzePhoto.setOnClickListener {
             analyzeCurrentPhoto()
         }
@@ -76,7 +100,19 @@ class FirstFragment : Fragment() {
         }
 
         updateModelStatus()
+        updateAuthUi()
         updateAnalyzeButton()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        auth.addAuthStateListener(authStateListener)
+        updateAuthUi()
+    }
+
+    override fun onStop() {
+        auth.removeAuthStateListener(authStateListener)
+        super.onStop()
     }
 
     override fun onDestroyView() {
@@ -87,6 +123,131 @@ class FirstFragment : Fragment() {
     override fun onDestroy() {
         objectLister.close()
         super.onDestroy()
+    }
+
+    private fun signInWithGoogle() {
+        if (authInProgress) return
+
+        setAuthBusy(true, R.string.status_signing_in)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val credentialResult = runCatching {
+                val googleIdOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(getString(R.string.default_web_client_id))
+                    .setAutoSelectEnabled(true)
+                    .build()
+                val request = GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
+
+                credentialManager.getCredential(requireContext(), request).credential
+            }
+
+            credentialResult
+                .onSuccess { credential ->
+                    runCatching { getGoogleIdToken(credential) }
+                        .onSuccess { idToken ->
+                            firebaseAuthWithGoogle(idToken)
+                        }
+                        .onFailure { throwable ->
+                            setAuthBusy(false)
+                            showAuthError(throwable)
+                        }
+                }
+                .onFailure { throwable ->
+                    setAuthBusy(false)
+                    if (throwable is GetCredentialCancellationException) {
+                        showToast(R.string.status_sign_in_cancelled)
+                    } else {
+                        showAuthError(throwable)
+                    }
+                }
+        }
+    }
+
+    private fun getGoogleIdToken(credential: Credential): String {
+        if (
+            credential is CustomCredential &&
+            credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+        ) {
+            return GoogleIdTokenCredential.createFrom(credential.data).idToken
+        }
+
+        error("Credential is not a Google ID token")
+    }
+
+    private fun firebaseAuthWithGoogle(idToken: String) {
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        auth.signInWithCredential(credential)
+            .addOnCompleteListener { task ->
+                setAuthBusy(false)
+                if (task.isSuccessful) {
+                    updateAuthUi()
+                    showToast(R.string.status_signed_in)
+                } else {
+                    showAuthError(task.exception ?: IllegalStateException("Unknown error"))
+                }
+            }
+    }
+
+    private fun signOut() {
+        if (authInProgress) return
+
+        setAuthBusy(true, R.string.status_signing_out)
+        auth.signOut()
+        viewLifecycleOwner.lifecycleScope.launch {
+            runCatching {
+                credentialManager.clearCredentialState(ClearCredentialStateRequest())
+            }.onFailure { throwable ->
+                Log.w(TAG, "Couldn't clear credential state", throwable)
+            }
+            setAuthBusy(false)
+            showToast(R.string.status_signed_out)
+        }
+    }
+
+    private fun updateAuthUi() {
+        val currentBinding = _binding ?: return
+        val user = auth.currentUser
+        currentBinding.buttonGoogleAuth.isEnabled = !authInProgress
+        currentBinding.buttonGoogleAuth.setText(
+            if (user == null) R.string.action_sign_in_with_google else R.string.action_sign_out
+        )
+        currentBinding.textAuthStatus.text = authStatusMessageResId?.let { getString(it) }
+            ?: getAuthStatusText(user)
+    }
+
+    private fun getAuthStatusText(user: FirebaseUser?): String {
+        if (user == null) {
+            return getString(R.string.auth_status_signed_out)
+        }
+
+        val displayName = user.displayName ?: user.email ?: user.uid
+        return getString(R.string.auth_status_signed_in, displayName)
+    }
+
+    private fun setAuthBusy(isBusy: Boolean, statusMessageResId: Int? = null) {
+        authInProgress = isBusy
+        authStatusMessageResId = if (isBusy) statusMessageResId else null
+        updateAuthUi()
+    }
+
+    private fun showAuthError(throwable: Throwable) {
+        val safeContext = context ?: return
+        Toast.makeText(
+            safeContext,
+            safeContext.getString(
+                R.string.error_auth_failed,
+                throwable.message ?: throwable::class.java.simpleName
+            ),
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun showToast(messageResId: Int) {
+        context?.let { safeContext ->
+            Toast.makeText(safeContext, messageResId, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun copySelectedModel(uri: Uri) {
@@ -227,6 +388,12 @@ class FirstFragment : Fragment() {
             Toast.makeText(requireContext(), R.string.status_take_photo_first, Toast.LENGTH_SHORT).show()
             return
         }
+        val user = auth.currentUser
+        if (user == null) {
+            Toast.makeText(requireContext(), R.string.status_sign_in_to_save, Toast.LENGTH_SHORT).show()
+            signInWithGoogle()
+            return
+        }
 
         val objectList = binding.textResult.text.toString()
         val documentRef = firestore.collection(STUFF_COLLECTION).document()
@@ -251,6 +418,7 @@ class FirstFragment : Fragment() {
                     val stuffDocument = mapOf(
                         "description" to objectList,
                         "location" to STUFF_LOCATION,
+                        "ownerUid" to user.uid,
                         "createdAt" to FieldValue.serverTimestamp(),
                         "imagePath" to imagePath,
                         "thumbnailPath" to thumbnailPath,
@@ -485,9 +653,10 @@ class FirstFragment : Fragment() {
     )
 
     companion object {
+        private const val TAG = "FirstFragment"
         private const val MODEL_FILE_NAME = "object_lister.litertlm"
         private const val STUFF_COLLECTION = "stuff"
-        private const val STUFF_LOCATION = "house"
+        private const val STUFF_LOCATION = "root"
         private const val DISPLAY_IMAGE_MAX_SIDE_PX = 1280
         private const val THUMBNAIL_IMAGE_SIDE_PX = 256
         private const val DISPLAY_IMAGE_WEBP_QUALITY = 82
