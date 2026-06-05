@@ -34,7 +34,6 @@ import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.storage.StorageMetadata
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,6 +50,7 @@ class FirstFragment : Fragment() {
     private val storage by lazy { FirebaseStorage.getInstance() }
     private var currentBitmap: Bitmap? = null
     private var authInProgress = false
+    private var workInProgress = false
     private var authStatusMessageResId: Int? = null
     private val authStateListener = FirebaseAuth.AuthStateListener { updateAuthUi() }
 
@@ -72,9 +72,6 @@ class FirstFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.buttonImportModel.setOnClickListener {
-            importModel.launch(arrayOf("application/octet-stream", "*/*"))
-        }
         binding.buttonGoogleAuth.setOnClickListener {
             if (auth.currentUser == null) {
                 signInWithGoogle()
@@ -100,9 +97,14 @@ class FirstFragment : Fragment() {
             loadCroppedPhoto(uriString.toUri())
         }
 
-        updateModelStatus()
         updateAuthUi()
         updateAnalyzeButton()
+    }
+
+    fun launchModelImport() {
+        if (workInProgress) return
+
+        importModel.launch(arrayOf("application/octet-stream", "*/*"))
     }
 
     override fun onStart() {
@@ -282,7 +284,6 @@ class FirstFragment : Fragment() {
             var startedAnalysis = false
             result
                 .onSuccess {
-                    updateModelStatus()
                     setResultText(getString(R.string.status_model_ready))
                     currentBitmap?.let {
                         startedAnalysis = true
@@ -290,7 +291,6 @@ class FirstFragment : Fragment() {
                     }
                 }
                 .onFailure { throwable ->
-                    updateModelStatus()
                     setResultText(
                         getString(
                             R.string.error_model_import_failed,
@@ -578,23 +578,14 @@ class FirstFragment : Fragment() {
         return File(File(requireContext().filesDir, "models"), MODEL_FILE_NAME)
     }
 
-    private fun updateModelStatus() {
-        val modelFile = getModelFile()
-        binding.textModelStatus.text = if (modelFile.exists()) {
-            getString(R.string.status_model_installed, formatBytes(modelFile.length()))
-        } else {
-            getString(R.string.status_model_missing)
-        }
-    }
-
     private fun updateAnalyzeButton() {
         binding.buttonAnalyzePhoto.isEnabled = (currentBitmap != null) && getModelFile().exists()
     }
 
     private fun setBusy(isBusy: Boolean, message: String? = null) {
+        workInProgress = isBusy
         binding.progressAnalyzing.visibility = if (isBusy) View.VISIBLE else View.GONE
         binding.buttonAnalyzePhoto.isEnabled = !isBusy && (currentBitmap != null) && getModelFile().exists()
-        binding.buttonImportModel.isEnabled = !isBusy
         message?.let { setResultText(it) }
     }
 
@@ -615,18 +606,6 @@ class FirstFragment : Fragment() {
         val currentBinding = _binding ?: return
         currentBinding.buttonSaveObjectList.isEnabled = enabled
         currentBinding.buttonCancelObjectList.isEnabled = enabled
-    }
-
-    private fun formatBytes(bytes: Long): String {
-        if (bytes < 1024) return "$bytes B"
-        val units = arrayOf("KB", "MB", "GB")
-        var value = bytes / 1024.0
-        var unitIndex = 0
-        while ((value >= 1024) && (unitIndex < units.lastIndex)) {
-            value /= 1024.0
-            unitIndex++
-        }
-        return String.format(Locale.US, "%.1f %s", value, units[unitIndex])
     }
 
     private class EncodedImage(

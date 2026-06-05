@@ -39,21 +39,6 @@
         </LinearLayout>
 
         <TextView
-            android:id="@+id/text_model_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/status_model_missing"
-            android:textAppearance="?attr/textAppearanceBodyMedium" />
-
-        <Button
-            android:id="@+id/button_import_model"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/action_import_model" />
-
-        <TextView
             android:id="@+id/text_photo_status"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

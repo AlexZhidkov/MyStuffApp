@@ -24,21 +24,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,6 +99,7 @@ class MainActivity : AppCompatActivity() {
                         photoUri = getTmpFileUri()
                         takePicture.launch(photoUri)
                     },
+                    onImportModel = ::requestModelImport,
                     fragmentManager = supportFragmentManager,
                 )
             }
@@ -134,6 +143,20 @@ class MainActivity : AppCompatActivity() {
         return FileProvider.getUriForFile(applicationContext, "$packageName.fileprovider", tmpFile)
     }
 
+    private fun requestModelImport() {
+        val navHostFragment =
+            supportFragmentManager.findFragmentById(R.id.nav_host_fragment_content_main) as? NavHostFragment
+        val firstFragment =
+            navHostFragment?.childFragmentManager?.primaryNavigationFragment as? FirstFragment
+
+        if (firstFragment == null) {
+            showMessage(getString(R.string.status_model_import_unavailable))
+            return
+        }
+
+        firstFragment.launchModelImport()
+    }
+
     private fun showMessage(message: String) {
         Snackbar.make(findViewById<View>(android.R.id.content), message, Snackbar.LENGTH_LONG).show()
     }
@@ -143,9 +166,10 @@ class MainActivity : AppCompatActivity() {
 fun StuffDashboard(
     modifier: Modifier = Modifier,
     onAddStuff: () -> Unit = {},
+    onImportModel: () -> Unit = {},
     fragmentManager: FragmentManager? = null,
 ) {
-    val addContentDescription = LocalContext.current.getString(R.string.add)
+    val addContentDescription = stringResource(R.string.add)
 
     Scaffold(
         modifier = modifier,
@@ -174,7 +198,10 @@ fun StuffDashboard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            HeaderSection(title = "My Stuff")
+            HeaderSection(
+                title = "My Stuff",
+                onImportModel = onImportModel,
+            )
             StatCardsSection()
             StuffGridList(
                 fragmentManager = fragmentManager,
@@ -185,7 +212,11 @@ fun StuffDashboard(
 }
 
 @Composable
-fun HeaderSection(title: String, modifier: Modifier = Modifier) {
+fun HeaderSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    onImportModel: () -> Unit = {},
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -201,16 +232,55 @@ fun HeaderSection(title: String, modifier: Modifier = Modifier) {
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(modifier = Modifier.weight(1f))
+        UserAvatarMenu(onImportModel = onImportModel)
+    }
+}
+
+@Composable
+private fun UserAvatarMenu(
+    modifier: Modifier = Modifier,
+    onImportModel: () -> Unit = {},
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
         Surface(
-            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.size(40.dp),
+            shape = CircleShape,
             color = AccentCopper,
             contentColor = BackgroundObsidian,
         ) {
-            Text(
-                text = "AI",
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
+            IconButton(onClick = { expanded = true }) {
+                Text(
+                    text = "A",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = BackgroundObsidian,
+                )
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(text = stringResource(R.string.action_import_model)) },
+                onClick = {
+                    expanded = false
+                    onImportModel()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(text = stringResource(R.string.action_profile)) },
+                onClick = { expanded = false },
+            )
+            DropdownMenuItem(
+                text = { Text(text = stringResource(R.string.action_settings)) },
+                onClick = { expanded = false },
+            )
+            DropdownMenuItem(
+                text = { Text(text = stringResource(R.string.action_sign_out)) },
+                onClick = { expanded = false },
             )
         }
     }
