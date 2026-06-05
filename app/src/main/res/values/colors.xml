@@ -2,4 +2,11 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="background_obsidian">#FF070807</color>
+    <color name="surface_obsidian">#FF121412</color>
+    <color name="accent_copper">#FFFA542F</color>
+    <color name="accent_sage">#FF8DA68C</color>
+    <color name="text_limestone">#FFF2F4F2</color>
+    <color name="text_stone_gray">#FF848A84</color>
+    <color name="border_steel">#FF1F241F</color>
 </resources>

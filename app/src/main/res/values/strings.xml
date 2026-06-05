@@ -4,6 +4,7 @@
     <!-- Strings used for fragments for navigation -->
     <string name="first_fragment_label">First Fragment</string>
     <string name="second_fragment_label">Second Fragment</string>
+    <string name="details_fragment_label">Details</string>
     <string name="next">Next</string>
     <string name="previous">Previous</string>
     <string name="add">Add</string>
@@ -41,6 +42,29 @@
     <string name="error_auth_failed">Authentication failed: %1$s</string>
     <string name="error_object_list_save_failed">Object list save failed: %1$s</string>
     <string name="error_unknown">Unknown error</string>
+    <string name="details_header_title">Item Details</string>
+    <string name="details_header_kicker">SECURE LEDGER</string>
+    <string name="details_back_content_description">Back</string>
+    <string name="details_image_content_description">Saved item photo</string>
+    <string name="details_status_saved">SAVED</string>
+    <string name="details_status_syncing">SYNCING</string>
+    <string name="details_object_status">LOCAL</string>
+    <string name="details_no_item_selected">No item selected.</string>
+    <string name="details_item_missing">Saved item not found.</string>
+    <string name="details_load_failed">Details load failed: %1$s</string>
+    <string name="details_image_unavailable">Image unavailable: %1$s</string>
+    <string name="details_no_image">No saved image.</string>
+    <string name="details_default_title">Saved stuff</string>
+    <string name="details_pending_value">Pending</string>
+    <string name="details_dimensions">%1$d x %2$d</string>
+    <string name="details_ledger_title">LEDGER</string>
+    <string name="details_objects_title">OBJECTS</string>
+    <string name="details_created_label">Created</string>
+    <string name="details_location_label">Location</string>
+    <string name="details_image_label">Image</string>
+    <string name="details_size_label">Size</string>
+    <string name="details_owner_label">Owner</string>
+    <string name="details_empty_objects">No objects listed.</string>
 
     <string name="lorem_ipsum">
         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris

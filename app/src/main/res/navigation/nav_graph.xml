@@ -18,8 +18,14 @@
     <fragment
         android:id="@+id/SecondFragment"
         android:name="com.example.mystuff.SecondFragment"
-        android:label="@string/second_fragment_label"
+        android:label="@string/details_fragment_label"
         tools:layout="@layout/fragment_second">
+
+        <argument
+            android:name="stuffId"
+            android:defaultValue="@null"
+            app:argType="string"
+            app:nullable="true" />
 
         <action
             android:id="@+id/action_SecondFragment_to_FirstFragment"

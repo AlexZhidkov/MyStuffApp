@@ -20,6 +20,7 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
 import com.example.mystuff.databinding.FragmentFirstBinding
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -445,6 +446,7 @@ class FirstFragment : Fragment() {
                         .addOnCompleteListener { task ->
                             val currentBinding = _binding ?: return@addOnCompleteListener
                             val safeContext = context
+                            val shouldNavigateToDetails = task.isSuccessful
                             if (safeContext != null) {
                                 if (task.isSuccessful) {
                                     Toast.makeText(
@@ -465,6 +467,12 @@ class FirstFragment : Fragment() {
                                 }
                             }
                             setObjectListActionsEnabled(currentBinding.textResult.isEnabled)
+                            if (shouldNavigateToDetails && isAdded) {
+                                findNavController().navigate(
+                                    R.id.action_FirstFragment_to_SecondFragment,
+                                    SecondFragment.createArgs(documentRef.id),
+                                )
+                            }
                         }
                 }
                 .onFailure { throwable ->
