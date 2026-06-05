@@ -94,7 +94,7 @@ class FirstFragment : Fragment() {
 
         parentFragmentManager.setFragmentResultListener(
             MainActivity.CROPPED_PHOTO_REQUEST_KEY,
-            viewLifecycleOwner
+            viewLifecycleOwner,
         ) { _, bundle ->
             val uriString = bundle.getString(MainActivity.CROPPED_PHOTO_URI_KEY) ?: return@setFragmentResultListener
             loadCroppedPhoto(uriString.toUri())
@@ -129,13 +129,13 @@ class FirstFragment : Fragment() {
     private fun signInWithGoogle() {
         if (authInProgress) return
 
-        setAuthBusy(true, R.string.status_signing_in)
+        setAuthBusy(isBusy = true, statusMessageResId = R.string.status_signing_in)
         viewLifecycleOwner.lifecycleScope.launch {
             val credentialResult = runCatching {
                 val googleIdOption = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(false)
+                    .setFilterByAuthorizedAccounts(filterByAuthorizedAccounts = false)
                     .setServerClientId(getString(R.string.default_web_client_id))
-                    .setAutoSelectEnabled(true)
+                    .setAutoSelectEnabled(autoSelectEnabled = true)
                     .build()
                 val request = GetCredentialRequest.Builder()
                     .addCredentialOption(googleIdOption)
@@ -151,12 +151,12 @@ class FirstFragment : Fragment() {
                             firebaseAuthWithGoogle(idToken)
                         }
                         .onFailure { throwable ->
-                            setAuthBusy(false)
+                            setAuthBusy(isBusy = false)
                             showAuthError(throwable)
                         }
                 }
                 .onFailure { throwable ->
-                    setAuthBusy(false)
+                    setAuthBusy(isBusy = false)
                     if (throwable is GetCredentialCancellationException) {
                         showToast(R.string.status_sign_in_cancelled)
                     } else {
@@ -168,8 +168,8 @@ class FirstFragment : Fragment() {
 
     private fun getGoogleIdToken(credential: Credential): String {
         if (
-            credential is CustomCredential &&
-            credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+            (credential is CustomCredential) &&
+            (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL)
         ) {
             return GoogleIdTokenCredential.createFrom(credential.data).idToken
         }
@@ -194,7 +194,7 @@ class FirstFragment : Fragment() {
     private fun signOut() {
         if (authInProgress) return
 
-        setAuthBusy(true, R.string.status_signing_out)
+        setAuthBusy(isBusy = true, statusMessageResId = R.string.status_signing_out)
         auth.signOut()
         viewLifecycleOwner.lifecycleScope.launch {
             runCatching {
@@ -202,7 +202,7 @@ class FirstFragment : Fragment() {
             }.onFailure { throwable ->
                 Log.w(TAG, "Couldn't clear credential state", throwable)
             }
-            setAuthBusy(false)
+            setAuthBusy(isBusy = false)
             showToast(R.string.status_signed_out)
         }
     }
@@ -212,7 +212,7 @@ class FirstFragment : Fragment() {
         val user = auth.currentUser
         currentBinding.buttonGoogleAuth.isEnabled = !authInProgress
         currentBinding.buttonGoogleAuth.setText(
-            if (user == null) R.string.action_sign_in_with_google else R.string.action_sign_out
+            if (user == null) R.string.action_sign_in_with_google else R.string.action_sign_out,
         )
         currentBinding.textAuthStatus.text = authStatusMessageResId?.let { getString(it) }
             ?: getAuthStatusText(user)
@@ -239,7 +239,7 @@ class FirstFragment : Fragment() {
             safeContext,
             safeContext.getString(
                 R.string.error_auth_failed,
-                throwable.message ?: throwable::class.java.simpleName
+                throwable.message ?: throwable::class.java.simpleName,
             ),
             Toast.LENGTH_LONG
         ).show()
@@ -294,7 +294,7 @@ class FirstFragment : Fragment() {
                     setResultText(
                         getString(
                             R.string.error_model_import_failed,
-                            throwable.message ?: throwable::class.java.simpleName
+                            throwable.message ?: throwable::class.java.simpleName,
                         )
                     )
                 }
@@ -331,7 +331,7 @@ class FirstFragment : Fragment() {
                     setResultText(
                         getString(
                             R.string.error_photo_load_failed,
-                            throwable.message ?: throwable::class.java.simpleName
+                            throwable.message ?: throwable::class.java.simpleName,
                         )
                     )
                     updateAnalyzeButton()
@@ -374,7 +374,7 @@ class FirstFragment : Fragment() {
                     setResultText(
                         getString(
                             R.string.error_analysis_failed,
-                            throwable.message ?: throwable::class.java.simpleName
+                            throwable.message ?: throwable::class.java.simpleName,
                         )
                     )
                 }
@@ -513,8 +513,8 @@ class FirstFragment : Fragment() {
     }
 
     private fun encodeStuffImages(bitmap: Bitmap): EncodedStuffImages {
-        val displayBitmap = scaleBitmapToMaxSide(bitmap, DISPLAY_IMAGE_MAX_SIDE_PX)
-        val thumbnailBitmap = centerCropBitmap(bitmap, THUMBNAIL_IMAGE_SIDE_PX)
+        val displayBitmap = scaleBitmapToMaxSide(bitmap)
+        val thumbnailBitmap = centerCropBitmap(bitmap)
         return try {
             EncodedStuffImages(
                 image = EncodedImage(
@@ -538,7 +538,7 @@ class FirstFragment : Fragment() {
         }
     }
 
-    private fun scaleBitmapToMaxSide(bitmap: Bitmap, maxSidePx: Int): Bitmap {
+    private fun scaleBitmapToMaxSide(bitmap: Bitmap, maxSidePx: Int = DISPLAY_IMAGE_MAX_SIDE_PX): Bitmap {
         val currentMaxSide = maxOf(bitmap.width, bitmap.height)
         if (currentMaxSide <= maxSidePx) {
             return bitmap
@@ -550,7 +550,7 @@ class FirstFragment : Fragment() {
         return bitmap.scale(targetWidth, targetHeight, true)
     }
 
-    private fun centerCropBitmap(bitmap: Bitmap, sizePx: Int): Bitmap {
+    private fun centerCropBitmap(bitmap: Bitmap, sizePx: Int = THUMBNAIL_IMAGE_SIDE_PX): Bitmap {
         val cropSide = minOf(bitmap.width, bitmap.height)
         val left = (bitmap.width - cropSide) / 2
         val top = (bitmap.height - cropSide) / 2
@@ -560,7 +560,7 @@ class FirstFragment : Fragment() {
         }
 
         val scaled = cropped.scale(sizePx, sizePx, true)
-        if (scaled !== cropped && cropped !== bitmap) {
+        if ((scaled !== cropped) && (cropped !== bitmap)) {
             cropped.recycle()
         }
         return scaled
@@ -588,12 +588,12 @@ class FirstFragment : Fragment() {
     }
 
     private fun updateAnalyzeButton() {
-        binding.buttonAnalyzePhoto.isEnabled = currentBitmap != null && getModelFile().exists()
+        binding.buttonAnalyzePhoto.isEnabled = (currentBitmap != null) && getModelFile().exists()
     }
 
     private fun setBusy(isBusy: Boolean, message: String? = null) {
         binding.progressAnalyzing.visibility = if (isBusy) View.VISIBLE else View.GONE
-        binding.buttonAnalyzePhoto.isEnabled = !isBusy && currentBitmap != null && getModelFile().exists()
+        binding.buttonAnalyzePhoto.isEnabled = !isBusy && (currentBitmap != null) && getModelFile().exists()
         binding.buttonImportModel.isEnabled = !isBusy
         message?.let { setResultText(it) }
     }
@@ -622,7 +622,7 @@ class FirstFragment : Fragment() {
         val units = arrayOf("KB", "MB", "GB")
         var value = bytes / 1024.0
         var unitIndex = 0
-        while (value >= 1024 && unitIndex < units.lastIndex) {
+        while ((value >= 1024) && (unitIndex < units.lastIndex)) {
             value /= 1024.0
             unitIndex++
         }
@@ -642,9 +642,8 @@ class FirstFragment : Fragment() {
 
             if (!bytes.contentEquals(other.bytes)) return false
             if (width != other.width) return false
-            if (height != other.height) return false
 
-            return true
+            return height == other.height
         }
 
         override fun hashCode(): Int {
